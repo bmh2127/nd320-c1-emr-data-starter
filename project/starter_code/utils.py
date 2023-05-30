@@ -2,15 +2,19 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
+from sklearn.preprocessing import MultiLabelBinarizer
 import os
 from student_utils import create_tf_numeric_feature
 
 def aggregate_dataset(df, grouping_field_list,  array_field):
-    df = df.groupby(grouping_field_list)['encounter_id', 
-            array_field].apply(lambda x: x[array_field].values.tolist()).reset_index().rename(columns={
-    0: array_field + "_array"}) 
-    
-    dummy_df = pd.get_dummies(df[array_field + '_array'].apply(pd.Series).stack()).sum(level=0)
+    df = df.groupby(grouping_field_list).agg({array_field: list}).reset_index().rename(
+         columns={array_field: array_field + "_array"})
+
+    mlb = MultiLabelBinarizer()
+
+    dummy_df = pd.DataFrame(mlb.fit_transform(df[array_field + '_array']),
+                            columns=mlb.classes_,
+                            index=df.index)
     dummy_col_list = [x.replace(" ", "_") for x in list(dummy_df.columns)] 
     mapping_name_dict = dict(zip([x for x in list(dummy_df.columns)], dummy_col_list ) ) 
     concat_df = pd.concat([df, dummy_df], axis=1)
@@ -44,6 +48,7 @@ def df_to_dataset(df, predictor,  batch_size=32):
 
 # build vocab for categorical features
 def write_vocabulary_file(vocab_list, field_name, default_value, vocab_dir='./diabetes_vocab/'):
+    os.makedirs(vocab_dir, exist_ok=True)
     output_file_path = os.path.join(vocab_dir, str(field_name) + "_vocab.txt")
     # put default value in first row as TF requires
     vocab_list = np.insert(vocab_list, 0, default_value, axis=0) 
